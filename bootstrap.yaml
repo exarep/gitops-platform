@@ -1,0 +1,14 @@
+---
+- name: Bootstrap fresh cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Verify OpenShift CLI login
+      kubernetes.core.k8s_cluster_info:
+      register: cluster_info
+
+    - name: Display cluster details
+      ansible.builtin.debug:
+        msg: "Connected to {{ cluster_info.connection.host }}"
