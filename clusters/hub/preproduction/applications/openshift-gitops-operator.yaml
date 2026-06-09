@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/exarep/gitops-platform.git
     targetRevision: main
-    path: resources/openshift-gitops-operator
+    path: clusters/hub/preproduction/openshift-gitops-operator
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:
