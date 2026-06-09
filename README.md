@@ -35,6 +35,8 @@ gitops-platform/
 │       ├── operator-group.yaml
 │       └── subscription.yaml
 ├── bootstrap.yaml
+├── requirements.txt
+├── requirements.yaml
 └── README.md
 ```
 
@@ -121,9 +123,25 @@ spec:
   channel: stable
 ```
 
+## Prerequisites
+
+- Python 3
+- `oc` CLI authenticated to the target cluster
+- Ansible Galaxy collection `kubernetes.core`
+
 ## Getting Started
 
 ```bash
+# Create and activate the virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install the required Ansible collections
+ansible-galaxy collection install -r requirements.yaml
+
 # Log in to the target cluster
 oc login --server=<cluster-api-url>
 

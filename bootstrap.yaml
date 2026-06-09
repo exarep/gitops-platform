@@ -12,3 +12,73 @@
     - name: Display cluster details
       ansible.builtin.debug:
         msg: "Connected to {{ cluster_info.connection.host }}"
+
+    - name: Apply external-secrets-operator manifests
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+      loop:
+        - resources/external-secrets-operator/namespace.yaml
+        - resources/external-secrets-operator/operator-group.yaml
+        - resources/external-secrets-operator/subscription.yaml
+
+    - name: Wait for external-secrets-operator CSV to succeed
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: external-secrets-operator
+        label_selectors:
+          - "operators.coreos.com/openshift-external-secrets-operator.external-secrets-operator"
+      register: csv_result
+      until:
+        - csv_result.resources | length > 0
+        - csv_result.resources[0].status.phase | default('') == 'Succeeded'
+      retries: 30
+      delay: 10
+
+    - name: Apply ExternalSecretsConfig
+      kubernetes.core.k8s:
+        state: present
+        src: resources/external-secrets-operator/external-secrets-config.yaml
+
+    - name: Wait for external-secrets webhook to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: external-secrets-webhook
+        namespace: external-secrets
+      register: webhook_result
+      until:
+        - webhook_result.resources | length > 0
+        - (webhook_result.resources[0].status.readyReplicas | default(0)) >= 1
+      retries: 30
+      delay: 10
+
+    - name: Retrieve AWS credentials from AWS Secrets Manager
+      ansible.builtin.set_fact:
+        aws_credentials: "{{ lookup('amazon.aws.secretsmanager_secret', 'intexarep/aws-credentials', region='us-east-2') | from_json }}"
+
+    - name: Create aws-secrets-manager-credentials secret in OpenShift
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: aws-secrets-manager-credentials
+            namespace: external-secrets-operator
+          type: Opaque
+          stringData:
+            access-key-id: "{{ aws_credentials.aws_access_key_id }}"
+            secret-access-key: "{{ aws_credentials.aws_secret_access_key }}"
+      no_log: true
+    
+    - name: Apply ClusterSecretStore for AWS Secrets Manager
+      kubernetes.core.k8s:
+        state: present
+        src: resources/external-secrets-operator/cluster-secret-store.yaml
+
+    - name: Apply Test External Secret
+      kubernetes.core.k8s:
+        state: present
+        src: resources/external-secrets-operator/test-external-secret.yaml
