@@ -131,6 +131,31 @@
       retries: 30
       delay: 10
 
+# Bootstrap gitops-workloads ArgoCD instance
+
+    - name: Apply gitops-workloads namespace and ArgoCD instance
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+      loop:
+        - resources/gitops-workloads/namespace.yaml
+        - resources/gitops-workloads/argocd.yaml
+
+    - name: Wait for gitops-workloads ArgoCD server to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: gitops-workloads-server
+        namespace: gitops-workloads
+      register: workloads_server_check
+      until:
+        - workloads_server_check.resources | length > 0
+        - (workloads_server_check.resources[0].status.readyReplicas | default(0)) >= 1
+      retries: 30
+      delay: 10
+
+# Apply app-of-apps
+
     - name: Apply app-of-apps
       kubernetes.core.k8s:
         state: present

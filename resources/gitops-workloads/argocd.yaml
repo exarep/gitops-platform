@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: gitops-workloads
+  namespace: gitops-workloads
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  server:
+    autoscale:
+      enabled: false
+    grpc:
+      ingress:
+        enabled: false
+    ingress:
+      enabled: false
+    route:
+      enabled: true
+      tls:
+        insecureEdgeTerminationPolicy: Redirect
+        termination: reencrypt
+  applicationSet:
+    resources:
+      limits:
+        cpu: "2"
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+  controller:
+    resources:
+      limits:
+        cpu: "2"
+        memory: 2Gi
+      requests:
+        cpu: 250m
+        memory: 1Gi
+  repo:
+    resources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+  redis:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 250m
+        memory: 128Mi
+  resourceExclusions: |
+    - apiGroups:
+        - tekton.dev
+      clusters:
+        - "*"
+      kinds:
+        - TaskRun
+        - PipelineRun
+  rbac:
+    defaultPolicy: ""
+    policy: |
+      g, system:cluster-admins, role:admin
+    scopes: "[groups]"
+  sourceNamespaces:
+    - gitops-workloads
