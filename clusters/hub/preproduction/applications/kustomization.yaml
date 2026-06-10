@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - openshift-gitops-operator.yaml
   - external-secrets-operator.yaml
+  - gitops-platform.yaml
