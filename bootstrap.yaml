@@ -157,9 +157,9 @@
       retries: 30
       delay: 10
 
-# # Apply app-of-apps
+# Apply app-of-apps
 
-#     - name: Apply app-of-apps
-#       kubernetes.core.k8s:
-#         state: present
-#         src: clusters/hub/app-of-apps.yaml
+    - name: Apply app-of-apps
+      kubernetes.core.k8s:
+        state: present
+        src: clusters/hub/app-of-apps.yaml

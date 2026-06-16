@@ -6,6 +6,10 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
+  sso:
+    provider: dex
+    dex:
+      openShiftOAuth: true
   server:
     autoscale:
       enabled: false
