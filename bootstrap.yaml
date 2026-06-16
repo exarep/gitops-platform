@@ -109,80 +109,57 @@
       retries: 30
       delay: 10
 
-# # Bootstrap GitOps
+#####
+# Bootstrap openshift-gitops-operator
+#####
 
-#     - name: Apply openshift-gitops-operator manifests
-#       kubernetes.core.k8s:
-#         state: present
-#         src: "{{ item }}"
-#       loop:
-#         - resources/openshift-gitops-operator/namespace.yaml
-#         - resources/openshift-gitops-operator/operator-group.yaml
-#         - resources/openshift-gitops-operator/subscription.yaml
+    - name: Apply openshift-gitops-operator manifests
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+      loop:
+        - resources/openshift-gitops-operator/namespace.yaml
+        - resources/openshift-gitops-operator/operator-group.yaml
+        - resources/openshift-gitops-operator/subscription.yaml
 
-#     - name: Wait for openshift-gitops-operator CSV to succeed
-#       kubernetes.core.k8s_info:
-#         api_version: operators.coreos.com/v1alpha1
-#         kind: ClusterServiceVersion
-#         namespace: openshift-gitops-operator
-#         label_selectors:
-#           - "operators.coreos.com/openshift-gitops-operator.openshift-gitops-operator"
-#       register: gitops_csv_result
-#       until:
-#         - gitops_csv_result.resources | length > 0
-#         - gitops_csv_result.resources[0].status.phase | default('') == 'Succeeded'
-#       retries: 30
-#       delay: 10
+    - name: Wait for openshift-gitops-operator CSV to succeed
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: openshift-gitops-operator
+        label_selectors:
+          - "operators.coreos.com/openshift-gitops-operator.openshift-gitops-operator"
+      register: gitops_csv_result
+      until:
+        - gitops_csv_result.resources | length > 0
+        - gitops_csv_result.resources[0].status.phase | default('') == 'Succeeded'
+      retries: 30
+      delay: 10
 
-# # Bootstrap gitops-platform ArgoCD instance
+    - name: Apply gitops-platform namespace and ArgoCD instance
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+      loop:
+        - resources/gitops-platform/namespace.yaml
+        - resources/gitops-platform/argocd.yaml
 
-#     - name: Apply gitops-platform namespace and ArgoCD instance
-#       kubernetes.core.k8s:
-#         state: present
-#         src: "{{ item }}"
-#       loop:
-#         - resources/gitops-platform/namespace.yaml
-#         - resources/gitops-platform/argocd.yaml
-
-#     - name: Wait for gitops-platform ArgoCD server to be ready
-#       kubernetes.core.k8s_info:
-#         api_version: apps/v1
-#         kind: Deployment
-#         name: gitops-platform-server
-#         namespace: gitops-platform
-#       register: argocd_server_check
-#       until:
-#         - argocd_server_check.resources | length > 0
-#         - (argocd_server_check.resources[0].status.readyReplicas | default(0)) >= 1
-#       retries: 30
-#       delay: 10
-
-# # Bootstrap gitops-workloads ArgoCD instance
-
-#     - name: Apply gitops-workloads namespace and ArgoCD instance
-#       kubernetes.core.k8s:
-#         state: present
-#         src: "{{ item }}"
-#       loop:
-#         - resources/gitops-workloads/namespace.yaml
-#         - resources/gitops-workloads/argocd.yaml
-
-#     - name: Wait for gitops-workloads ArgoCD server to be ready
-#       kubernetes.core.k8s_info:
-#         api_version: apps/v1
-#         kind: Deployment
-#         name: gitops-workloads-server
-#         namespace: gitops-workloads
-#       register: workloads_server_check
-#       until:
-#         - workloads_server_check.resources | length > 0
-#         - (workloads_server_check.resources[0].status.readyReplicas | default(0)) >= 1
-#       retries: 30
-#       delay: 10
+    - name: Wait for gitops-platform ArgoCD server to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: gitops-platform-server
+        namespace: gitops-platform
+      register: argocd_server_check
+      until:
+        - argocd_server_check.resources | length > 0
+        - (argocd_server_check.resources[0].status.readyReplicas | default(0)) >= 1
+      retries: 30
+      delay: 10
 
 # # Apply app-of-apps
 
 #     - name: Apply app-of-apps
 #       kubernetes.core.k8s:
 #         state: present
-#         src: clusters/hub/preproduction/app-of-apps.yaml
+#         src: clusters/hub/app-of-apps.yaml

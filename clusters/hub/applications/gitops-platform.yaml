@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/exarep/gitops-platform.git
     targetRevision: main
-    path: clusters/hub/preproduction/gitops-platform
+    path: clusters/hub/gitops-platform
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:
