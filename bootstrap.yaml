@@ -4,10 +4,15 @@
   connection: local
   gather_facts: false
 
+  vars:
+    aws_access_key_id: "{{ lookup('ansible.builtin.ini', 'aws_access_key_id', section=aws_profile | default('default'), file='~/.aws/credentials') }}"
+    aws_secret_access_key: "{{ lookup('ansible.builtin.ini', 'aws_secret_access_key', section=aws_profile | default('default'), file='~/.aws/credentials') }}"
+
   tasks:
     - name: Verify OpenShift CLI login
       kubernetes.core.k8s_cluster_info:
       register: cluster_info
+
 
     - name: Display cluster details
       ansible.builtin.debug:
@@ -54,10 +59,6 @@
       retries: 30
       delay: 10
 
-    - name: Retrieve AWS credentials from AWS Secrets Manager
-      ansible.builtin.set_fact:
-        aws_credentials: "{{ lookup('amazon.aws.secretsmanager_secret', 'intexarep/aws-credentials', region='us-east-2') | from_json }}"
-
     - name: Create aws-secrets-manager-credentials secret in OpenShift
       kubernetes.core.k8s:
         state: present
@@ -69,8 +70,8 @@
             namespace: external-secrets-operator
           type: Opaque
           stringData:
-            access-key-id: "{{ aws_credentials.aws_access_key_id }}"
-            secret-access-key: "{{ aws_credentials.aws_secret_access_key }}"
+            aws_access_key_id: "{{ aws_access_key_id }}"
+            aws_secret_access_key: "{{ aws_secret_access_key }}"
       no_log: true
     
     - name: Apply ClusterSecretStore for AWS Secrets Manager
@@ -83,80 +84,105 @@
         state: present
         src: resources/external-secrets-operator/test-external-secret.yaml
 
-# Bootstrap GitOps
-
-    - name: Apply openshift-gitops-operator manifests
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ item }}"
-      loop:
-        - resources/openshift-gitops-operator/namespace.yaml
-        - resources/openshift-gitops-operator/operator-group.yaml
-        - resources/openshift-gitops-operator/subscription.yaml
-
-    - name: Wait for openshift-gitops-operator CSV to succeed
+    - name: Wait for test secret to be created by External Secrets Operator
       kubernetes.core.k8s_info:
-        api_version: operators.coreos.com/v1alpha1
-        kind: ClusterServiceVersion
-        namespace: openshift-gitops-operator
-        label_selectors:
-          - "operators.coreos.com/openshift-gitops-operator.openshift-gitops-operator"
-      register: gitops_csv_result
+        api_version: v1
+        kind: Secret
+        name: test
+        namespace: external-secrets-operator
+      register: test_secret_result
       until:
-        - gitops_csv_result.resources | length > 0
-        - gitops_csv_result.resources[0].status.phase | default('') == 'Succeeded'
+        - test_secret_result.resources | length > 0
+      retries: 30
+      delay: 10
+      
+    - name: Verify test ExternalSecret status is SecretSynced
+      kubernetes.core.k8s_info:
+        api_version: external-secrets.io/v1
+        kind: ExternalSecret
+        name: test-external-secret
+        namespace: external-secrets-operator
+      register: test_es_result
+      until:
+        - test_es_result.resources | length > 0
+        - test_es_result.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
       retries: 30
       delay: 10
 
-# Bootstrap gitops-platform ArgoCD instance
+# # Bootstrap GitOps
 
-    - name: Apply gitops-platform namespace and ArgoCD instance
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ item }}"
-      loop:
-        - resources/gitops-platform/namespace.yaml
-        - resources/gitops-platform/argocd.yaml
+#     - name: Apply openshift-gitops-operator manifests
+#       kubernetes.core.k8s:
+#         state: present
+#         src: "{{ item }}"
+#       loop:
+#         - resources/openshift-gitops-operator/namespace.yaml
+#         - resources/openshift-gitops-operator/operator-group.yaml
+#         - resources/openshift-gitops-operator/subscription.yaml
 
-    - name: Wait for gitops-platform ArgoCD server to be ready
-      kubernetes.core.k8s_info:
-        api_version: apps/v1
-        kind: Deployment
-        name: gitops-platform-server
-        namespace: gitops-platform
-      register: argocd_server_check
-      until:
-        - argocd_server_check.resources | length > 0
-        - (argocd_server_check.resources[0].status.readyReplicas | default(0)) >= 1
-      retries: 30
-      delay: 10
+#     - name: Wait for openshift-gitops-operator CSV to succeed
+#       kubernetes.core.k8s_info:
+#         api_version: operators.coreos.com/v1alpha1
+#         kind: ClusterServiceVersion
+#         namespace: openshift-gitops-operator
+#         label_selectors:
+#           - "operators.coreos.com/openshift-gitops-operator.openshift-gitops-operator"
+#       register: gitops_csv_result
+#       until:
+#         - gitops_csv_result.resources | length > 0
+#         - gitops_csv_result.resources[0].status.phase | default('') == 'Succeeded'
+#       retries: 30
+#       delay: 10
 
-# Bootstrap gitops-workloads ArgoCD instance
+# # Bootstrap gitops-platform ArgoCD instance
 
-    - name: Apply gitops-workloads namespace and ArgoCD instance
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ item }}"
-      loop:
-        - resources/gitops-workloads/namespace.yaml
-        - resources/gitops-workloads/argocd.yaml
+#     - name: Apply gitops-platform namespace and ArgoCD instance
+#       kubernetes.core.k8s:
+#         state: present
+#         src: "{{ item }}"
+#       loop:
+#         - resources/gitops-platform/namespace.yaml
+#         - resources/gitops-platform/argocd.yaml
 
-    - name: Wait for gitops-workloads ArgoCD server to be ready
-      kubernetes.core.k8s_info:
-        api_version: apps/v1
-        kind: Deployment
-        name: gitops-workloads-server
-        namespace: gitops-workloads
-      register: workloads_server_check
-      until:
-        - workloads_server_check.resources | length > 0
-        - (workloads_server_check.resources[0].status.readyReplicas | default(0)) >= 1
-      retries: 30
-      delay: 10
+#     - name: Wait for gitops-platform ArgoCD server to be ready
+#       kubernetes.core.k8s_info:
+#         api_version: apps/v1
+#         kind: Deployment
+#         name: gitops-platform-server
+#         namespace: gitops-platform
+#       register: argocd_server_check
+#       until:
+#         - argocd_server_check.resources | length > 0
+#         - (argocd_server_check.resources[0].status.readyReplicas | default(0)) >= 1
+#       retries: 30
+#       delay: 10
 
-# Apply app-of-apps
+# # Bootstrap gitops-workloads ArgoCD instance
 
-    - name: Apply app-of-apps
-      kubernetes.core.k8s:
-        state: present
-        src: clusters/hub/preproduction/app-of-apps.yaml
+#     - name: Apply gitops-workloads namespace and ArgoCD instance
+#       kubernetes.core.k8s:
+#         state: present
+#         src: "{{ item }}"
+#       loop:
+#         - resources/gitops-workloads/namespace.yaml
+#         - resources/gitops-workloads/argocd.yaml
+
+#     - name: Wait for gitops-workloads ArgoCD server to be ready
+#       kubernetes.core.k8s_info:
+#         api_version: apps/v1
+#         kind: Deployment
+#         name: gitops-workloads-server
+#         namespace: gitops-workloads
+#       register: workloads_server_check
+#       until:
+#         - workloads_server_check.resources | length > 0
+#         - (workloads_server_check.resources[0].status.readyReplicas | default(0)) >= 1
+#       retries: 30
+#       delay: 10
+
+# # Apply app-of-apps
+
+#     - name: Apply app-of-apps
+#       kubernetes.core.k8s:
+#         state: present
+#         src: clusters/hub/preproduction/app-of-apps.yaml

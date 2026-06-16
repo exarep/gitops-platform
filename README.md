@@ -4,144 +4,79 @@ GitOps repository for platform operator lifecycle management using the Argo CD a
 
 ## Prerequisites
 
+- Python 3
 - `oc` CLI authenticated to the target cluster
-- Ansible Galaxy collection `kubernetes.core`
+- AWS Secrets Manager secrets provisioned by the `iac` project (`pb-setup-secrets.yaml`)
+- The `exarep/aws-credentials` secret populated with valid AWS credentials (JSON)
+- The `exarep/test` secret populated for External Secrets Operator validation
 
-## Getting Started
+## Getting started
 
-```bash
-# Create and activate the virtual environment
+```shell
+git clone https://github.com/exarep/gitops-platform.git
+cd gitops-platform
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ansible-galaxy collection install -r requirements.yaml
 ```
 
+## Bootstrap
+
+Log in to the target cluster and run the bootstrap playbook:
+
 ```shell
-source .venv/bin/activate
-oc login --server=<cluster-api-url>
+oc login --server=https://api.hub.cluster.exarep.com:6443
 ansible-playbook bootstrap.yaml
 ```
 
-## Repository Structure
+### What the bootstrap does
+
+1. Verifies the `oc` CLI is authenticated to the cluster
+2. Installs the External Secrets Operator and waits for the CSV to succeed
+3. Applies the `ExternalSecretsConfig` and waits for the webhook deployment
+4. Creates the `aws-secrets-manager-credentials` Kubernetes secret from local AWS credentials
+5. Applies the `ClusterSecretStore` pointing to AWS Secrets Manager
+6. Applies a test `ExternalSecret` and verifies the secret syncs successfully
+7. *(Planned)* Installs the OpenShift GitOps Operator
+8. *(Planned)* Creates the `gitops-platform` and `gitops-workloads` Argo CD instances
+9. *(Planned)* Applies the app-of-apps to begin managing platform resources
+
+## Project structure
 
 ```
 gitops-platform/
-├── clusters/
-│   ├── hub/
-│   │   ├── preproduction/
-│   │   │   ├── applications/
-│   │   │   │   ├── external-secrets-operator.yaml
-│   │   │   │   ├── openshift-gitops-operator.yaml
-│   │   │   │   └── kustomization.yaml
-│   │   │   ├── external-secrets-operator/
-│   │   │   │   └── kustomization.yaml
-│   │   │   ├── openshift-gitops-operator/
-│   │   │   │   └── kustomization.yaml
-│   │   │   └── app-of-apps.yaml
-│   │   └── production/
-│   └── spoke/
-│       ├── development/
-│       ├── integration/
-│       └── production/
-├── resources/
-│   ├── external-secrets-operator/
-│   │   ├── kustomization.yaml
-│   │   ├── namespace.yaml
-│   │   ├── operator-group.yaml
-│   │   └── subscription.yaml
-│   └── openshift-gitops-operator/
-│       ├── kustomization.yaml
-│       ├── namespace.yaml
-│       ├── operator-group.yaml
-│       └── subscription.yaml
+├── ansible.cfg
 ├── bootstrap.yaml
 ├── requirements.txt
 ├── requirements.yaml
-└── README.md
+├── clusters/
+│   └── hub/
+├── resources/
+│   ├── external-secrets-operator/
+│   │   ├── namespace.yaml
+│   │   ├── operator-group.yaml
+│   │   ├── subscription.yaml
+│   │   ├── external-secrets-config.yaml
+│   │   ├── cluster-secret-store.yaml
+│   │   └── test-external-secret.yaml
+│   ├── openshift-gitops-operator/
+│   │   ├── namespace.yaml
+│   │   ├── operator-group.yaml
+│   │   └── subscription.yaml
+│   ├── gitops-platform/
+│   │   ├── namespace.yaml
+│   │   └── argocd.yaml
+│   └── gitops-workloads/
+│       ├── namespace.yaml
+│       └── argocd.yaml
 ```
 
-## Concepts
+## Secrets integration
 
-### `resources/`
+The bootstrap connects the cluster to AWS Secrets Manager via the External Secrets Operator. The flow is:
 
-Reusable Kustomize bases for each operator. Each base contains the Namespace, OperatorGroup, and Subscription needed to install an operator via OLM. These are environment-agnostic and should never contain environment-specific values.
-
-### `clusters/`
-
-Cluster-specific configuration organised by role and environment:
-
-```
-clusters/<role>/<environment>/
-```
-
-| Role | Description |
-|---|---|
-| `hub` | ACM hub cluster |
-| `spoke` | Managed spoke clusters |
-
-Each environment directory contains:
-
-| Path | Purpose |
-|---|---|
-| `app-of-apps.yaml` | Argo CD Application that syncs the `applications/` directory |
-| `applications/` | Argo CD Application manifests for each operator, with sync-wave ordering |
-| `<operator>/` | Kustomize overlay referencing the base in `resources/` — add patches here for environment-specific customisation |
-
-### `bootstrap.yaml`
-
-Ansible playbook to bootstrap a fresh cluster. Verifies cluster connectivity and applies the initial configuration.
-
-## App-of-Apps Flow
-
-```
-bootstrap.yaml (Ansible)
-  │
-  └─▶ applies app-of-apps.yaml
-        │
-        └─▶ syncs clusters/hub/<env>/applications/
-              │
-              ├─▶ openshift-gitops-operator (sync-wave: 0)
-              │     Source: clusters/hub/<env>/openshift-gitops-operator/
-              │       └─▶ kustomize base: resources/openshift-gitops-operator/
-              │
-              └─▶ external-secrets-operator (sync-wave: 1)
-                    Source: clusters/hub/<env>/external-secrets-operator/
-                      └─▶ kustomize base: resources/external-secrets-operator/
-```
-
-## Environment-Specific Patching
-
-Overlays live alongside the applications they serve, inside the cluster environment directory. Each `<operator>/kustomization.yaml` references the shared base in `resources/` and can layer on environment-specific patches.
-
-To override a value for a single environment (e.g. a different subscription channel in production), add a patch file to the operator's overlay directory:
-
-```
-clusters/hub/production/external-secrets-operator/
-├── kustomization.yaml
-└── subscription-patch.yaml
-```
-
-```yaml
-# kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  - ../../../../resources/external-secrets-operator
-
-patches:
-  - path: subscription-patch.yaml
-```
-
-```yaml
-# subscription-patch.yaml
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: external-secrets-operator
-spec:
-  channel: stable
-```
-
-
+1. `iac/pb-setup-secrets.yaml` creates secrets in AWS Secrets Manager under the `exarep/` prefix
+2. The bootstrap creates a `ClusterSecretStore` that authenticates to AWS using the `aws-secrets-manager-credentials` Kubernetes secret
+3. `ExternalSecret` resources reference the `ClusterSecretStore` to sync AWS secrets into the cluster as Kubernetes secrets
+4. A test `ExternalSecret` pulls `exarep/test` and verifies the full pipeline works end-to-end
